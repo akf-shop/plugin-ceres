@@ -124,7 +124,8 @@ Vue.component("variation-select", {
          * @param {number} attributeId
          * @param {number} attributeValueId
          */
-        getInvalidOptionTooltip(attributeId, attributeValueId)
+        // eslint-disable-next-line complexity
+        getInvalidOptionTooltip(attributeId, attributeValueId, attributeName)
         {
             const qualifiedVariations = this.getQualifiedVariations(attributeId, attributeValueId);
             const closestVariation    = this.getClosestVariation(qualifiedVariations);
@@ -151,7 +152,9 @@ Vue.component("variation-select", {
                 );
             }
 
-            return TranslationService.translate("Ceres::Template.singleItemNotAvailableInSelection", { name: names.join(", ") });
+            return TranslationService.translate(
+                `Ceres::Template.singleItemNotAvailableInSelection${ isDefined(attributeName) ? "WithAttributeName" : "" }`,
+                { name: names.join(", "), attribute: attributeName });
         },
 
         /**
@@ -360,16 +363,70 @@ Vue.component("variation-select", {
          */
         isAttributeSelectionValid(attributeId, attributeValueId)
         {
-            attributeValueId = parseInt(attributeValueId) || null;
-            if (this.selectedAttributes[attributeId] === attributeValueId)
-            {
-                return true;
-            }
+            const code = this.getAttributeSelectionCode(attributeId, attributeValueId);
 
+            return [1, 2].includes(code);
+        },
+
+        // 1 ≈ attribute is selectable; item is in stock
+        // 2 ≈ attribute is selectable; item is sold out
+        // 3 ≈ attribute is selectable but need to reset other fields
+        getAttributeSelectionCode(attributeId, attributeValueId)
+        {
             const selectedAttributes = JSON.parse(JSON.stringify(this.selectedAttributes));
 
             selectedAttributes[attributeId] = parseInt(attributeValueId) || null;
-            return !!this.filterVariations(selectedAttributes).length;
+
+            const filteredVariations = this.filterVariations(selectedAttributes);
+
+            if (filteredVariations.length === 0)
+            {
+                return 3;
+            }
+            if (filteredVariations.length === 1 && !filteredVariations[0].isSalable)
+            {
+                return 2;
+            }
+
+            return 1;
+        },
+
+        getAttributeValueLabel(attributeId, attributeValueId)
+        {
+            attributeValueId = parseInt(attributeValueId) || null;
+
+            const code = this.getAttributeSelectionCode(attributeId, attributeValueId);
+            const attributeName = this.getAttributeName(attributeId, attributeValueId);
+
+            if (code === 1 || this.selectedAttributes[attributeId] === attributeValueId)
+            {
+                return attributeName;
+            }
+            if (code === 2)
+            {
+                return TranslationService.translate("Ceres::Template.singleItemSoldOut", { name: attributeName });
+            }
+            else
+            {
+                return this.getInvalidOptionTooltip(attributeId, attributeValueId, attributeName);
+            }
+        },
+
+        getAttributeName(attributeId, attributeValueId)
+        {
+            const attribute = this.attributes.find(attribute => attribute.attributeId === attributeId);
+
+            if (isDefined(attribute) && isDefined(attribute.values))
+            {
+                const attributeValue = attribute.values.find(value => value.attributeValueId === attributeValueId);
+
+                if (isDefined(attributeValue))
+                {
+                    return attributeValue.name;
+                }
+            }
+
+            return null;
         },
 
         /**
@@ -379,12 +436,8 @@ Vue.component("variation-select", {
         isUnitSelectionValid(unitId)
         {
             unitId = parseInt(unitId);
-            if (this.selectedUnit === unitId)
-            {
-                return true;
-            }
 
-            return !!this.filterVariations(null, unitId).length;
+            return this.selectedUnit === unitId || !!this.filterVariations(null, unitId).length;
         },
 
         /**

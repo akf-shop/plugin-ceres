@@ -9,13 +9,8 @@
                         <option
                             v-for="value in attribute.values"
                             :value="value.attributeValueId"
-                            :selected="value.attributeValueId === selectedAttributes[attribute.attributeId]">
-                            <template v-if="isAttributeSelectionValid(attribute.attributeId, value.attributeValueId)">
-                                ${ value.name }
-                            </template>
-                            <template v-else>
-                                {{ trans("Ceres::Template.singleItemInvalidAttribute", { "name": "${ value.name }" }) }}
-                            </template>
+                            :selected="value.attributeValueId === selectedAttributes[attribute.attributeId]"
+                            v-html="getAttributeValueLabel(attribute.attributeId, value.attributeValueId)">
                         </option>
                     </select>
                     <label v-tooltip="isTextCut(attribute.name)" data-toggle="tooltip" data-placement="top" :title="attribute.name">${ attribute.name }</label>
