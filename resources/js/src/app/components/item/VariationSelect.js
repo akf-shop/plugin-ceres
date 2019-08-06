@@ -2,6 +2,7 @@ import { textWidth } from "../../helper/dom";
 import { isDefined, isNull } from "../../helper/utils";
 import TranslationService from "services/TranslationService";
 
+const clone = require("lodash/clone");
 const NotificationService = require("services/NotificationService");
 
 Vue.component("variation-select", {
@@ -119,43 +120,6 @@ Vue.component("variation-select", {
             this.correctSelection(invalidSelection);
         },
 
-        /**
-         * returns a string for box tooltips, for not availble options
-         * @param {number} attributeId
-         * @param {number} attributeValueId
-         */
-        // eslint-disable-next-line complexity
-        getInvalidOptionTooltip(attributeId, attributeValueId, attributeName)
-        {
-            const qualifiedVariations = this.getQualifiedVariations(attributeId, attributeValueId);
-            const closestVariation    = this.getClosestVariation(qualifiedVariations);
-
-            if (!closestVariation)
-            {
-                return "";
-            }
-
-            const invalidSelection = this.getInvalidSelectionByVariation(closestVariation);
-            const names = [];
-
-            for (const attribute of invalidSelection.attributesToReset)
-            {
-                if (attribute.attributeId !== attributeId)
-                {
-                    names.push(`<b>${attribute.name}</b>`);
-                }
-            }
-            if (invalidSelection.newUnit)
-            {
-                names.push(
-                    `<b>${TranslationService.translate("Ceres::Template.singleItemContent")}</b>`
-                );
-            }
-
-            return TranslationService.translate(
-                `Ceres::Template.singleItemNotAvailableInSelection${ isDefined(attributeName) ? "WithAttributeName" : "" }`,
-                { name: names.join(", "), attribute: attributeName });
-        },
 
         /**
          * returns a list of variations, filtered by attribute or unit
@@ -257,7 +221,7 @@ Vue.component("variation-select", {
         correctSelection(invalidSelection)
         {
             const messages   = [];
-            const attributes = JSON.parse(JSON.stringify(this.selectedAttributes));
+            const attributes = clone(this.selectedAttributes);
 
             for (const attributeToReset of invalidSelection.attributesToReset)
             {
@@ -363,53 +327,40 @@ Vue.component("variation-select", {
          */
         isAttributeSelectionValid(attributeId, attributeValueId)
         {
-            const code = this.getAttributeSelectionCode(attributeId, attributeValueId);
-
-            return [1, 2].includes(code);
-        },
-
-        // 1 ≈ attribute is selectable; item is in stock
-        // 2 ≈ attribute is selectable; item is sold out
-        // 3 ≈ attribute is selectable but need to reset other fields
-        getAttributeSelectionCode(attributeId, attributeValueId)
-        {
-            const selectedAttributes = JSON.parse(JSON.stringify(this.selectedAttributes));
+            const selectedAttributes = clone(this.selectedAttributes);
 
             selectedAttributes[attributeId] = parseInt(attributeValueId) || null;
 
-            const filteredVariations = this.filterVariations(selectedAttributes);
-
-            if (filteredVariations.length === 0)
-            {
-                return 3;
-            }
-            if (filteredVariations.length === 1 && !filteredVariations[0].isSalable)
-            {
-                return 2;
-            }
-
-            return 1;
+            return this.selectedAttributes[attributeId] === attributeValueId || !!this.filterVariations(selectedAttributes).length;
         },
 
+        /**
+         * returns true, if the selection with a new unitId would be valid
+         * @param {[number, string]} unitId
+         */
+        isUnitSelectionValid(unitId)
+        {
+            unitId = parseInt(unitId);
+
+            return this.selectedUnit === unitId || !!this.filterVariations(null, unitId).length;
+        },
+
+        // eslint-disable-next-line complexity
         getAttributeValueLabel(attributeId, attributeValueId)
         {
             attributeValueId = parseInt(attributeValueId) || null;
-
-            const code = this.getAttributeSelectionCode(attributeId, attributeValueId);
             const attributeName = this.getAttributeName(attributeId, attributeValueId);
 
-            if (code === 1 || this.selectedAttributes[attributeId] === attributeValueId)
+            if (this.selectedAttributes[attributeId] === attributeValueId)
             {
                 return attributeName;
             }
-            if (code === 2)
-            {
-                return TranslationService.translate("Ceres::Template.singleItemSoldOut", { name: attributeName });
-            }
-            else
-            {
-                return this.getInvalidOptionTooltip(attributeId, attributeValueId, attributeName);
-            }
+
+            const selectedAttributes = clone(this.selectedAttributes);
+
+            selectedAttributes[attributeId] = parseInt(attributeValueId) || null;
+
+            return this.getTranslatedLabel(selectedAttributes, attributeId, attributeValueId, this.selectedUnit, attributeName);
         },
 
         getAttributeName(attributeId, attributeValueId)
@@ -429,15 +380,67 @@ Vue.component("variation-select", {
             return null;
         },
 
-        /**
-         * returns true, if the selection with a new unitId would be valid
-         * @param {[number, string]} unitId
-         */
-        isUnitSelectionValid(unitId)
+        getUnitLabel(unitId)
         {
             unitId = parseInt(unitId);
 
-            return this.selectedUnit === unitId || !!this.filterVariations(null, unitId).length;
+            const unitName = this.units[unitId];
+
+            if (this.selectedUnit === unitId)
+            {
+                return unitName;
+            }
+
+            return this.getTranslatedLabel(this.selectedAttributes, null, null, unitId, unitName);
+        },
+
+        getTranslatedLabel(attributes, attributeId, attributeValueId, unitId, name)
+        {
+            const filteredVariations = this.filterVariations(attributes, unitId);
+
+            if (filteredVariations.length === 0)
+            {
+                return this.getInvalidOptionTooltip(attributeId, attributeValueId, unitId, name);
+            }
+            if (filteredVariations.length === 1 && !filteredVariations[0].isSalable)
+            {
+                return TranslationService.translate("Ceres::Template.singleItemSoldOut", { name });
+            }
+
+            return name;
+        },
+
+        // eslint-disable-next-line complexity
+        getInvalidOptionTooltip(attributeId, attributeValueId, unitId, name)
+        {
+            const qualifiedVariations = this.getQualifiedVariations(attributeId, attributeValueId, unitId);
+            const closestVariation    = this.getClosestVariation(qualifiedVariations);
+
+            if (closestVariation)
+            {
+                const invalidSelection = this.getInvalidSelectionByVariation(closestVariation);
+                const names = [];
+
+                for (const attribute of invalidSelection.attributesToReset)
+                {
+                    if (attribute.attributeId !== attributeId)
+                    {
+                        names.push(`<b>${attribute.name}</b>`);
+                    }
+                }
+                if (invalidSelection.newUnit)
+                {
+                    names.push(
+                        `<b>${TranslationService.translate("Ceres::Template.singleItemContent")}</b>`
+                    );
+                }
+
+                return TranslationService.translate(
+                    `Ceres::Template.singleItemNotAvailableInSelection${ isDefined(name) ? "WithAttributeName" : "" }`,
+                    { name: names.join(", "), attribute: name });
+            }
+
+            return null;
         },
 
         /**

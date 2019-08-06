@@ -48,13 +48,8 @@
                         <option
                             v-for="(unit, unitId) in units"
                             :value="unitId"
-                            :selected="parseInt(unitId) === selectedUnit">
-                            <template v-if="isUnitSelectionValid(unitId)">
-                                ${ unit }
-                            </template>
-                            <template v-else>
-                                {{ trans("Ceres::Template.singleItemInvalidAttribute", { "name": "${ unit }" }) }}
-                            </template>
+                            :selected="parseInt(unitId) === selectedUnit"
+                            v-html="getUnitLabel(unitId)">
                         </option>
                     </select>
                     <label>{{ trans("Ceres::Template.singleItemContent") }}</label>
